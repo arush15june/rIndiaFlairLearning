@@ -22,7 +22,6 @@
 TODO: Push data to Mongo collection.
 """
 
-import asyncio
 import sys
 import os
 import logging
@@ -31,7 +30,7 @@ from pprint import pprint
 
 import praw
 
-logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.DEBUG)
 
 # Flairs from r/India sidebar.
 RINDIA_FLAIRS = [
@@ -217,15 +216,15 @@ class RedditSubredditScraper(RedditScraper):
         for submission in self._subreddit.hot(*args, **kwargs):
             yield submission
     
-    async def _scrape_submission(self, submission, *args, **kwargs):
+    def _scrape_submission(self, submission, *args, **kwargs):
         submission_scraper = RedditSubmissionScraper(submission=submission)
         submission_scraper.extract_data()
         logging.info(submission_scraper.scraped["flair"])
         
-    async def scrape(self, *args, **kwargs):
+    def scrape(self, *args, **kwargs):
         logging.info(f'Subreddit: {self._subreddit}')
         for submission in self._get_submissions(*args, **kwargs):
-            asyncio.create_task(self._scrape_submission(submission))
+            self._scrape_submission(submission)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Reddit Thread Scraper")
@@ -235,7 +234,7 @@ if __name__ == "__main__":
 
     try:
         sub_scraper = RedditSubredditScraper(subreddit=args.subreddit)
-        asyncio.run(sub_scraper.scrape(limit=args.limit))
+        sub_scraper.scrape(limit=args.limit)
     except InvalidRedditAuthError:
         logging.info("Authentication failure.")
         sys.exit(1)
