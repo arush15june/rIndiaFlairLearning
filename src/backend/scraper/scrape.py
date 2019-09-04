@@ -18,15 +18,20 @@
                     - comment upvotes at time of collection
             - Subreddit
                 - Scrape <Submissions> on the subreddit.
+
+TODO: Push data to Mongo collection.
 """
 
+import asyncio
+import sys
 import os
 import logging
 import argparse
+from pprint import pprint
 
 import praw
 
-logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.INFO)
 
 # Flairs from r/India sidebar.
 RINDIA_FLAIRS = [
@@ -45,6 +50,7 @@ DEFAULT_SUBREDDIT = "india"
 DEFAULT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID")
 DEFAULT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET")
 DEFAULT_USER_AGENT = os.getenv("REDDIT_USER_AGENT") or "script/linux:"
+DEFAULT_SUBMISSION_LIMIT = None
 
 class InvalidRedditAuthError(Exception):
     pass
@@ -88,7 +94,6 @@ class RedditScraper(object):
             except:
                 raise InvalidRedditDefaultAuthError()
 
-
 class RedditSubmissionScraper(RedditScraper):
     """
     Scrape a submission off reddit 
@@ -111,15 +116,76 @@ class RedditSubmissionScraper(RedditScraper):
         if submission_instance is not None:
             self.submission = submission_instance
         
-        logging.info(f'Submission: {self.submission.title} {self.submission.url}')
-                        
+        self.scraped = {}
+        self.data_extractors = {
+            "permalink": self._extract_permalink,
+            "upvotes": self._extract_upvotes,
+            "timestamp": self._extract_timestamp,
+            "title": self._extract_title,
+            "poster": self._extract_poster,
+            "subreddit": self._extract_subreddit,
+            "flair": self._extract_flair,
+            "selfpost": self._extract_selfpost,
+            "selftext": self._extract_selftext,
+            "comments": self._extract_comments,
+        }
+        
+        logging.info(f'Scraping Submission: {self.submission.title} {self.submission.permalink}')
+
     def get_submission_by_url(self, url):
         return self.reddit.submission(url=url)
 
     def get_submission_by_id(self, id):
         return self.reddit.submission(id=id)
-        
 
+    def _extract_permalink(self, *args, **kwargs):
+        return self.submission.permalink
+
+    def _extract_upvotes(self, *args, **kwargs):
+        return self.submission.score
+
+    def _extract_timestamp(self, *args, **kwargs):
+        return self.submission.created_utc
+
+    def _extract_title(self, *args, **kwargs):
+        return self.submission.title
+
+    def _extract_poster(self, *args, **kwargs):
+        return self.submission.author.name
+
+    def _extract_subreddit(self, *args, **kwargs):
+        return self.submission.subreddit.name
+
+    def _extract_flair(self, *args, **kwargs):
+        return self.submission.link_flair_text
+
+    def _extract_selfpost(self, *args, **kwargs):
+        return self.submission.is_self
+
+    def _extract_selftext(self, *args, **kwargs):
+        return self.submission.selftext
+
+    def _extract_comments(self, *args, **kwargs):
+        self.submission.comments.replace_more(limit=0)
+        self.submission.comment_sort = 'top'
+        comments = self.submission.comments.list()
+        return [ 
+            { 
+                "author": comment.author.name,
+                "body": comment.body,
+                "created_utc": comment.created_utc,
+                "id": comment.id,
+                "permalink": comment.permalink,
+                "upvotes": comment.score
+            }
+            for comment in comments if comment.author
+        ]
+
+    def extract_data(self, *args, **kwargs):
+        for k, v in self.data_extractors.items():
+            data = v()
+            self.scraped[k] = data
+        
 class RedditSubredditScraper(RedditScraper):
     """
     Scrape a reddit subreddit by sub name. 
@@ -148,20 +214,28 @@ class RedditSubredditScraper(RedditScraper):
     :kwarg str limit: limit on submissions to extract.
     """
     def _get_submissions(self, *args, **kwargs):
-        limit = kwargs.get("limit")
-        for submission in self._subreddit.top(limit=limit):
+        for submission in self._subreddit.hot(*args, **kwargs):
             yield submission
     
-    def _scrape_submission(self, submission, *args, **kwargs):
+    async def _scrape_submission(self, submission, *args, **kwargs):
         submission_scraper = RedditSubmissionScraper(submission=submission)
+        submission_scraper.extract_data()
+        logging.info(submission_scraper.scraped["flair"])
         
-    def scrape(self, *args, **kwargs):
+    async def scrape(self, *args, **kwargs):
         logging.info(f'Subreddit: {self._subreddit}')
-        for submission in self._get_submissions():
-            self._scrape_submission(submission)
+        for submission in self._get_submissions(*args, **kwargs):
+            asyncio.create_task(self._scrape_submission(submission))
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description="Reddit Thread Scraper")
-    # parser.add_argument("subreddit", type=str, default=DEFAULT_SUBREDDIT, help="Subreddit to scrape.")
-    sub_scraper = RedditSubredditScraper()
-    sub_scraper.scrape()
+    parser = argparse.ArgumentParser(description="Reddit Thread Scraper")
+    parser.add_argument("--subreddit", type=str, default=DEFAULT_SUBREDDIT, help="Subreddit to scrape.")
+    parser.add_argument("--limit", type=int, default=DEFAULT_SUBMISSION_LIMIT, help="Numbers of submission to scrape.")
+    args = parser.parse_args()
+
+    try:
+        sub_scraper = RedditSubredditScraper(subreddit=args.subreddit)
+        asyncio.run(sub_scraper.scrape(limit=args.limit))
+    except InvalidRedditAuthError:
+        logging.info("Authentication failure.")
+        sys.exit(1)
