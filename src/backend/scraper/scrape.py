@@ -250,9 +250,12 @@ if __name__ == "__main__":
     parser.add_argument("--export", action='store_true', help="Export scraped results.")
     parser.add_argument("--host", type=str, default=DEFAULT_MONGO_HOST, help="Mongo Host")
     parser.add_argument("--port", type=int, default=DEFAULT_MONGO_PORT, help="Mongo Port")
+    parser.add_argument("--debug", action='store_true', help="Debug logging.")
 
     args = parser.parse_args()
 
+    if args.debug:
+        logging.setLevel(logging.DEBUG)
 
     client = get_mongo_client(args.host, args.port)
     logging.info(f'Mongo client: {client}')
@@ -267,7 +270,9 @@ if __name__ == "__main__":
             export=args.export,
             exporter=mongo_submission_exporter
         )
-        sub_scraper.scrape(limit=args.limit)
+        sub_scraper.scrape(
+            limit=args.limit,
+        )
     except InvalidRedditAuthError:
         logging.info("Authentication failure.")
         sys.exit(1)
