@@ -29,8 +29,9 @@ import argparse
 from pprint import pprint
 
 import praw
+import pymongo
 
-logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.INFO)
 
 # Flairs from r/India sidebar.
 RINDIA_FLAIRS = [
@@ -50,6 +51,14 @@ DEFAULT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID")
 DEFAULT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET")
 DEFAULT_USER_AGENT = os.getenv("REDDIT_USER_AGENT") or "script/linux:"
 DEFAULT_SUBMISSION_LIMIT = None
+
+DEFAULT_MONGO_HOST = "localhost"
+DEFAULT_MONGO_PORT = 27017
+
+def pprint_exporter(submission):
+    pprint(submission)
+
+DEFAULT_SCRAPE_EXPORTER = pprint_exporter
 
 class InvalidRedditAuthError(Exception):
     pass
@@ -201,6 +210,8 @@ class RedditSubredditScraper(RedditScraper):
         super(RedditSubredditScraper, self).__init__(*args, **kwargs)
 
         subreddit = kwargs.get("subreddit", DEFAULT_SUBREDDIT)
+        self._export = kwargs.get('export', False)
+        self.exporter = kwargs.get('exporter', DEFAULT_SCRAPE_EXPORTER)
 
         try:
             self._subreddit = self.reddit.subreddit(subreddit)
@@ -220,20 +231,42 @@ class RedditSubredditScraper(RedditScraper):
         submission_scraper = RedditSubmissionScraper(submission=submission)
         submission_scraper.extract_data()
         logging.info(submission_scraper.scraped["flair"])
+        if self._export:
+            self.exporter(submission_scraper.scraped)
         
     def scrape(self, *args, **kwargs):
         logging.info(f'Subreddit: {self._subreddit}')
         for submission in self._get_submissions(*args, **kwargs):
             self._scrape_submission(submission)
 
+def get_mongo_client(host, port, *args, **kwargs):
+    client = pymongo.MongoClient(host, port)
+    return client
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Reddit Thread Scraper")
     parser.add_argument("--subreddit", type=str, default=DEFAULT_SUBREDDIT, help="Subreddit to scrape.")
     parser.add_argument("--limit", type=int, default=DEFAULT_SUBMISSION_LIMIT, help="Numbers of submission to scrape.")
+    parser.add_argument("--export", action='store_true', help="Export scraped results.")
+    parser.add_argument("--host", type=str, default=DEFAULT_MONGO_HOST, help="Mongo Host")
+    parser.add_argument("--port", type=int, default=DEFAULT_MONGO_PORT, help="Mongo Port")
+
     args = parser.parse_args()
 
+
+    client = get_mongo_client(args.host, args.port)
+    logging.info(f'Mongo client: {client}')
+    reddit_db = client.reddit
+    submissions = reddit_db.submissions
+    def mongo_submission_exporter(submission, *args, **kwargs):
+        submissions.insert_one(submission)
+        
     try:
-        sub_scraper = RedditSubredditScraper(subreddit=args.subreddit)
+        sub_scraper = RedditSubredditScraper(
+            subreddit=args.subreddit,
+            export=args.export,
+            exporter=mongo_submission_exporter
+        )
         sub_scraper.scrape(limit=args.limit)
     except InvalidRedditAuthError:
         logging.info("Authentication failure.")
