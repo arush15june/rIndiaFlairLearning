@@ -4,3 +4,4 @@ praw.ini
 src/backend/model/r_India_submissions.json
 src/backend/model/r_India_submissions.csv
 src/backend/scraper/scrape.log
+*.pyc
