@@ -59,7 +59,6 @@ def pprint_exporter(submission):
     pprint(submission)
 
 DEFAULT_SCRAPE_EXPORTER = pprint_exporter
-
 class InvalidRedditAuthError(Exception):
     pass
     
@@ -148,39 +147,39 @@ class RedditSubmissionScraper(RedditScraper):
 
     def _extract_permalink(self, *args, **kwargs):
         data = self.submission.permalink
-        return data if None else None
+        return data
 
     def _extract_upvotes(self, *args, **kwargs):
         data = self.submission.score
-        return data if data else None
+        return data
     
     def _extract_timestamp(self, *args, **kwargs):
         data = self.submission.created_utc
-        return data if data else None
+        return data
     
     def _extract_title(self, *args, **kwargs):
         data = self.submission.title
-        return data if data else None
+        return data
 
     def _extract_poster(self, *args, **kwargs):
-        data = self.submission.author.name if self.submission.author else None 
-        return data if data else None
+        data = self.submission.author.name
+        return data
 
     def _extract_subreddit(self, *args, **kwargs):
         data = self.submission.subreddit.name
-        return data if data else None
+        return data
 
     def _extract_flair(self, *args, **kwargs):
         data = self.submission.link_flair_text
-        return data if data else None
+        return data
 
     def _extract_selfpost(self, *args, **kwargs):
         data = self.submission.is_self
-        return data if data else None
+        return data
 
     def _extract_selftext(self, *args, **kwargs):
         data = self.submission.selftext
-        return data if data else None
+        return data
 
     def _extract_comments(self, *args, **kwargs):
         self.submission.comments.replace_more(limit=0)
@@ -239,6 +238,7 @@ class RedditSubredditScraper(RedditScraper):
     def _scrape_submission(self, submission, *args, **kwargs):
         submission_scraper = RedditSubmissionScraper(submission=submission)
         submission_scraper.extract_data()
+
         logging.info(submission_scraper.scraped["flair"])
         if self._export:
             self.exporter(submission_scraper.scraped)
@@ -246,7 +246,11 @@ class RedditSubredditScraper(RedditScraper):
     def scrape(self, *args, **kwargs):
         logging.info(f'Subreddit: {self._subreddit}')
         for submission in self._get_submissions(*args, **kwargs):
-            self._scrape_submission(submission)
+            try:
+                self._scrape_submission(submission)
+            except:
+                logging.error("failed to scrape submission:", submission)
+                continue
 
 def get_mongo_client(host, port, *args, **kwargs):
     client = pymongo.MongoClient(host, port)
@@ -269,7 +273,7 @@ if __name__ == "__main__":
     client = get_mongo_client(args.host, args.port)
     logging.info(f'Mongo client: {client}')
     reddit_db = client.reddit
-    submissions = reddit_db.submissions_top
+    submissions = reddit_db.submissions_top_1
     def mongo_submission_exporter(submission, *args, **kwargs):
         submissions.insert_one(submission)
         
