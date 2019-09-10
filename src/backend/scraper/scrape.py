@@ -147,31 +147,40 @@ class RedditSubmissionScraper(RedditScraper):
         return self.reddit.submission(id=id)
 
     def _extract_permalink(self, *args, **kwargs):
-        return self.submission.permalink
+        data = self.submission.permalink
+        return data if None else None
 
     def _extract_upvotes(self, *args, **kwargs):
-        return self.submission.score
-
+        data = self.submission.score
+        return data if data else None
+    
     def _extract_timestamp(self, *args, **kwargs):
-        return self.submission.created_utc
-
+        data = self.submission.created_utc
+        return data if data else None
+    
     def _extract_title(self, *args, **kwargs):
-        return self.submission.title
+        data = self.submission.title
+        return data if data else None
 
     def _extract_poster(self, *args, **kwargs):
-        return self.submission.author.name
+        data = self.submission.author.name if self.submission.author else None 
+        return data if data else None
 
     def _extract_subreddit(self, *args, **kwargs):
-        return self.submission.subreddit.name
+        data = self.submission.subreddit.name
+        return data if data else None
 
     def _extract_flair(self, *args, **kwargs):
-        return self.submission.link_flair_text
+        data = self.submission.link_flair_text
+        return data if data else None
 
     def _extract_selfpost(self, *args, **kwargs):
-        return self.submission.is_self
+        data = self.submission.is_self
+        return data if data else None
 
     def _extract_selftext(self, *args, **kwargs):
-        return self.submission.selftext
+        data = self.submission.selftext
+        return data if data else None
 
     def _extract_comments(self, *args, **kwargs):
         self.submission.comments.replace_more(limit=0)
@@ -179,7 +188,7 @@ class RedditSubmissionScraper(RedditScraper):
         comments = self.submission.comments.list()
         return [ 
             { 
-                "author": comment.author.name,
+                "author": comment.author.name if comment.author.name else None,
                 "body": comment.body,
                 "created_utc": comment.created_utc,
                 "id": comment.id,
@@ -224,7 +233,7 @@ class RedditSubredditScraper(RedditScraper):
     :kwarg str limit: limit on submissions to extract.
     """
     def _get_submissions(self, *args, **kwargs):
-        for submission in self._subreddit.hot(*args, **kwargs):
+        for submission in self._subreddit.top(*args, **kwargs):
             yield submission
     
     def _scrape_submission(self, submission, *args, **kwargs):
@@ -255,12 +264,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.debug:
-        logging.setLevel(logging.DEBUG)
+        pass
 
     client = get_mongo_client(args.host, args.port)
     logging.info(f'Mongo client: {client}')
     reddit_db = client.reddit
-    submissions = reddit_db.submissions
+    submissions = reddit_db.submissions_top
     def mongo_submission_exporter(submission, *args, **kwargs):
         submissions.insert_one(submission)
         
